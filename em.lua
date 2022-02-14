@@ -22,8 +22,8 @@ local sqlite3 = require("lsqlite3")
 local em = {}
 
 -- version
-local em.version = { 0, 1, 0 }
-local em.version_string = table.concat(em.version, ".")
+em.version = { 0, 1, 0 }
+em.version_string = table.concat(em.version, ".")
 
 -- module variables
 local entities = {}
@@ -234,13 +234,6 @@ check_statement = prepare{"SELECT count(1) FROM \"sqlite_master\" WHERE type='ta
 
 local function prepare_statements(entity)
 	local name = entity.name
-
-	local check = check_statement()
-
-	confirm(check:bind(1, name), "Failed to bind table name")
-	if execute(check, get_first) == 0 then
-		return
-	end
 
 	name = quote(name)
 
