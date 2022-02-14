@@ -25,8 +25,8 @@ than tables, but it's used here to avoid name collision with lua tables.)
 * Composite UNIQUE constraints (useful for joining entities)
 
 ## Undertested:
-* Commits
-* id pkeys
+* Transactions (e.g. reading fields during transactions, etc)
+* `id` pkeys
 * UNIQUE constraints (multiple per entity)
 
 
@@ -185,6 +185,8 @@ numeric parameter approach, e.g. `entity:where("owner = ?")`.
 The resulting function has a signature like `where(...)` accepts these
 parameters and binds them in order they're given (using lsqlite3's
 `stmt:bind_values(...)`).
+
+**Note:** This function currently isn't supported in transactions.
 
 
 ## Rows
