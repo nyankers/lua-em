@@ -215,7 +215,7 @@ local function prepare(lines)
 
 		if statement == nil then
 			if em.db == nil then
-				error("Database is closed.")
+				error("Database is closed")
 			end
 
 			statement = em.db:prepare(sql)
@@ -307,7 +307,7 @@ end
 -- create a new table
 function em.new(entity_name, key, fields, options)
 	if entities[entity_name] then
-		error("Table "..entity_name.." already exists.")
+		error("Table "..entity_name.." already exists")
 	end
 
 	local self = setmetatable({}, entity_mt)
@@ -321,7 +321,7 @@ function em.new(entity_name, key, fields, options)
 		for i,field in ipairs(fields) do
 			local name = string.lower(field.name)
 			if name == nil then
-				error("Table "..name.." field #"..i.." is missing a name.")
+				error("Table "..name.." field #"..i.." is missing a name")
 			end
 
 			parsed[name] = field
@@ -346,7 +346,7 @@ function em.new(entity_name, key, fields, options)
 
 	-- broad verifications
 	if fields.rowid then
-		error("Cannot overwrite rowid field.")
+		error("Cannot overwrite rowid field")
 	end
 
 	if key == nil then
@@ -364,7 +364,7 @@ function em.new(entity_name, key, fields, options)
 		local field = fields[name]
 
 		if type(name) ~= "string" then
-			error("Fields must be strings.")
+			error("Fields must be strings")
 		end
 
 		-- string fields for convenience
@@ -406,7 +406,7 @@ function em.new(entity_name, key, fields, options)
 
 		if field.class == "ID" then
 			if key ~= name then
-				error("ID can only be used for primary keys.")
+				error("ID can only be used for primary keys")
 			end
 		end
 	end
@@ -414,7 +414,7 @@ function em.new(entity_name, key, fields, options)
 	while #queue > 0 do
 		local name = table.remove(queue)
 		if name == entity_name then
-			error("Circular dependency between "..entity_name.." and itself.")
+			error("Circular dependency between "..entity_name.." and itself")
 		end
 		local entity = entities[name]
 		if entity ~= nil and not dependencies[entity] then
@@ -473,7 +473,7 @@ end
 function em.begin(strict)
 	if transaction then
 		if strict then
-			error("Already began a transaction.")
+			error("Already began a transaction")
 		end
 
 		transaction.level = transaction.level + 1
@@ -491,7 +491,7 @@ end
 -- commit a transaction
 function em.commit(force)
 	if not transaction then
-		error("No transaction.")
+		error("No transaction")
 	end
 
 	if not force then
@@ -554,7 +554,7 @@ end
 
 -- rollback changes
 function em.rollback()
-	confirm(em.db:exec("ROLLBACK TRANSACTION"), "Failed to rollback transaction.")
+	confirm(em.db:exec("ROLLBACK TRANSACTION"), "Failed to rollback transaction")
 
 	for hook in pairs(transaction.update) do
 		hook(false)
@@ -662,7 +662,7 @@ local function new_row(entity, data, reread)
 		local rv
 
 		if deleted then
-			error("This row has already been deleted.")
+			error("This row has already been deleted")
 		end
 
 		rv = updated[key]
@@ -708,7 +708,7 @@ local function new_row(entity, data, reread)
 	-- update a row value
 	local function set(self, key, value)
 		if deleted then
-			error("This row has already been deleted.")
+			error("This row has already been deleted")
 		elseif fields[key] == nil then
 			error("Invalid field "..key.." on table "..entity.name)
 		end
@@ -916,7 +916,7 @@ function entity:new(data, skip_check)
 			local value = data[name]
 
 			if self.caches[name][value] then
-				error("UNIQUE constraint broken.")
+				error("UNIQUE constraint broken")
 			end
 
 			confirm(is_unique:bind(i, value), "Failed to bind unique field")
@@ -925,7 +925,7 @@ function entity:new(data, skip_check)
 		local values = execute(is_unique, is_unique.get_values)
 
 		if values and values[1] ~= 0 then
-			error("UNIQUE constraint broken.")
+			error("UNIQUE constraint broken")
 		end
 	end
 
@@ -1107,7 +1107,7 @@ function entity:where(clause)
 
 	return function(...)
 		if transaction then
-			error("Running where() clauses in transactions currently isn't supported.")
+			error("Running where() clauses in transactions currently isn't supported")
 		end
 
 		local statement = factory()
