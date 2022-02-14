@@ -25,81 +25,96 @@ than tables, but it's used here to avoid name collision with lua tables.)
 * `id` pkeys
 * UNIQUE constraints (multiple per entity)
 
+## Module
 
-## Module Members
+### Module Members
 
-### em.class
+#### em.class
 A more verbose alias for m.c below.
 
-### em.c
+#### em.c
 A table of basic field types, described in more detail below.
 
-### em.entity
+#### em.entity
 A function for creating foreign key fields, described in more detail below.
 
-### em.close()
+#### em.close()
 Close the database if it's been opened. Warning: This does not flush changes
 first. You almost certainly want to run em.flush() before running em.close().
 
-### em.open(filename)
+#### em.open(filename)
 Opens the database.
 
-### em.db
+#### em.db
 The underlying sqlite db object if it's been opened; otherwise, nil.
 
-### em.new(name, key, fields, options) -> entity
+#### em.new(name, key, fields, options) -> entity
 Defines a new entity description, as described below. (Note: this does not
 create it on the database, it only tells the entity manager that this entity
 exists.)
 
-### em.get(name) -> entity
+#### em.get(name) -> entity
 Returns an existing entity by name.
 
-### em.entities() -> iterator
+#### em.entities() -> iterator
 A pairs() style function for all the registered entities.
 
-### em.begin(strict)
+#### em.begin(strict)
 Begins a transaction. If strict is true, it fails if one's already begun.
 
-### em.commit(force)
+#### em.commit(force)
 Commits a transaction. Unless force it true, this merely unwinds a single
 em.begin() statement, and the transaction is only committed once they're all
 unwound.
 
-### em.transaction()
+#### em.transaction()
 Returns true if there's an active transaction; otherwise, returns false.
 
-### em.rollback()
+#### em.rollback()
 Rollbacks a transaction, no matter the depth.
 
-### em.raw\_flush()
+#### em.raw\_flush()
 Flushes all changes to the database, but does not begin/commit/rollback
 transactions.
 
-### em.flush()
+#### em.flush()
 Flushes all changes to the database in a strict transaction.
 
-### em.version -> {major, minor, release}
+#### em.version -> {major, minor, release}
 A version array in the form of `{major, minor, release}`, e.g. version 0.1.0 would be `{0, 1, 0}`.
 
-### em.version\_string -> string
+#### em.version\_string -> string
 The version as a string, e.g. version 0.1.0 would be `"0.1.0"`.
+
+### Module Registers
+
+These are values that a user may set to control how the module behaves.
+
+#### em.default\_key (string or nil)
+
+When calling `em.new()` with a field `key`, this name is used when none is
+given. If it's `nil` (or any other non-string value), then such attempts cause
+an error to happen instead.
 
 
 ## Entities
 
 An entity may be declared using `em.new(name, key, fields, options)` where:
 
-| Option    | Description |
+| Argument    | Description |
 | --------- | ----------- |
 | `name`    | The name of the table |
 | `key`     | The primary key of the table, or nil to use rowid |
 | `fields`  | An array or map of fields |
 | `options` | Reserved |
 
+The table's `key` may be given either as a string or as a field per below. If a
+string is used, then `fields` must contain a field with a matching name. If a
+field is used, then either a name must be given (similar to passing fields in
+as an array), or `em.default_key` must be set.
+
 If `fields[1]` exists, then fields is used solely as an array, and each field
-will need a name parameter. If key is neither nil nor "rowid", then there must
-be a field with that name.
+will need a name parameter.
 
 Fields have type information and may even point to a different table:
 

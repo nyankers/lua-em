@@ -25,6 +25,9 @@ local em = {}
 em.version = { 0, 1, 0 }
 em.version_string = table.concat(em.version, ".")
 
+-- registers
+em.default_key = nil
+
 -- module variables
 local entities = {}
 local transaction = nil
@@ -309,16 +312,36 @@ function em.new(entity_name, key, fields, options)
 	local parsed = {}
 	local field_names = {}
 
+	if type(key) == "function" then
+		key = key()
+	end
+
+	if type(key) == "table" then
+		if key.name == nil then
+			if type(em.default_key) == "string" then
+				key.name = em.default_key
+			else
+				error("Table "..entity_name.." key is missing a name")
+			end
+		end
+
+		parsed[key.name] = key
+
+		table.insert(field_names, key.name)
+
+		key = key.name
+	end
+
 	if fields[1] then
 		-- ordered fields
 		for i,field in ipairs(fields) do
 			local name = string.lower(field.name)
 			if name == nil then
-				error("Table "..name.." field #"..i.." is missing a name")
+				error("Table "..entity_name.." field #"..i.." is missing a name")
 			end
 
 			parsed[name] = field
-			field_names[i] = name
+			table.insert(field_names, name)
 		end
 	else
 		-- unordered fields - pkey goes first
@@ -414,7 +437,7 @@ function em.new(entity_name, key, fields, options)
 			dependencies[entity] = true
 
 			if entity.fields == nil then
-				error("Bad table "..name.." from "..tale_name)
+				error("Bad table "..name.." from "..entity_name)
 			end
 
 			for _,field in pairs(entity.fields) do
