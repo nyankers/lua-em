@@ -95,7 +95,7 @@ local function confirm(result, error_msg, ...)
 		error_msg = "Sqlite error"
 	end
 
-	error(error_msg.." (#"..result..")")
+	error(error_msg.." (#"..result..")", 2)
 end
 
 local cache_mt = { __mode = "v" }
@@ -1086,7 +1086,59 @@ function entity:create()
 	return true
 end
 
+-- Where clauses
+
+local where = {}
+
+local function where_call(self, ...)
+	if transaction then
+		error("Running where() clauses in transactions currently isn't supported")
+	end
+
+	local statement = self.statement()
+	local entity = self.entity
+	local field_names = entity.field_names
+	local key = entity.key
+	local cache = entity.cache
+
+	confirm(statement:bind_values(...), "Failed to bind values")
+
+	local results = {}
+
+	-- just store the data until we can reset()
+	for row in statement:rows() do
+		table.insert(results, row)
+	end
+
+	statement:reset()
+
+	for i,row in ipairs(results) do
+		local data = {}
+
+		for j,value in ipairs(row) do
+			local field = field_names[j] or "rowid"
+
+			data[field] = value
+		end
+
+		local pkey = data[key]
+
+		local result = cache[pkey]
+		if result == nil then
+			result = new_row(entity, data)
+		end
+
+		results[i] = result
+	end
+
+	return results
+end
+
+local where_mt = {__index = where, __call = where_call}
+
 function entity:where(clause)
+	local where = setmetatable({}, where_mt)
+
 	local field_names = self.field_names
 
 	local quoted_field_names = {}
@@ -1094,42 +1146,13 @@ function entity:where(clause)
 		quoted_field_names[i] = quote(v)
 	end
 	
-	local sql = "SELECT "..table.concat(quoted_field_names)..",\"rowid\" FROM "..quote(self.name).." WHERE "..clause
+	local sql = "SELECT "..table.concat(quoted_field_names, ",")..",\"rowid\" FROM "..quote(self.name).." WHERE "..clause
 
-	local factory = prepare{sql}
+	where.sql = sql
+	where.statement = prepare{sql}
+	where.entity = self
 
-	return function(...)
-		if transaction then
-			error("Running where() clauses in transactions currently isn't supported")
-		end
-
-		local statement = factory()
-
-		confirm(statement:bind_values(...), "Failed to bind values")
-
-		local results = {}
-
-		-- just store the data until we can reset()
-		for row in statement:rows() do
-			table.insert(results, row)
-		end
-
-		statement:reset()
-
-		for i,row in ipairs(results) do
-			local data = {}
-
-			for j,value in ipairs(row) do
-				local field = field_names[j] or "rowid"
-
-				data[field] = value
-			end
-
-			results[i] = new_row(self, data)
-		end
-
-		return results
-	end
+	return where
 end
 
 
