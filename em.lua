@@ -21,6 +21,10 @@ local sqlite3 = require("lsqlite3")
 -- module
 local em = {}
 
+-- version
+local em.version = { 0, 1, 0 }
+local em.version_string = table.concat(em.version, ".")
+
 -- module variables
 local entities = {}
 local transaction = nil

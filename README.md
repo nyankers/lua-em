@@ -83,6 +83,12 @@ transactions.
 ### em.flush()
 Flushes all changes to the database in a strict transaction.
 
+### em.version -> {major, minor, release}
+A version array in the form of `{major, minor, release}`, e.g. version 0.1.0 would be `{0, 1, 0}`.
+
+### em.version\_string -> string
+The version as a string, e.g. version 0.1.0 would be `"0.1.0"`.
+
 
 ## Entities
 
