@@ -20,10 +20,6 @@ than tables, but it's used here to avoid name collision with lua tables.)
 * Field names are always lowercase, and "rowid" may not be used as a field
   name.
 
-## Todo:
-* Allow key to be a field directly (e.g. `em.new("user", em.c.text("name"))`).
-* Composite UNIQUE constraints (useful for joining entities)
-
 ## Undertested:
 * Transactions (e.g. reading fields during transactions, etc)
 * `id` pkeys
