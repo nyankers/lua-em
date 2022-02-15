@@ -332,6 +332,9 @@ function em.new(entity_name, key, fields, options)
 		key = key.name
 	end
 
+	-- allow key-only tables
+	fields = fields or {}
+
 	if fields[1] then
 		-- ordered fields
 		for i,field in ipairs(fields) do
@@ -345,7 +348,9 @@ function em.new(entity_name, key, fields, options)
 		end
 	else
 		-- unordered fields - pkey goes first
-		field_names[1] = key
+		if key ~= nil and key ~= "rowid" then
+			field_names[1] = key
+		end
 
 		for name,field in pairs(fields) do
 			name = string.lower(name)
@@ -359,6 +364,9 @@ function em.new(entity_name, key, fields, options)
 	end
 
 	fields = parsed
+	if #field_names == 0 then
+		error("Table "..entity_name.." has no fields")
+	end
 
 	-- broad verifications
 	if fields.rowid then

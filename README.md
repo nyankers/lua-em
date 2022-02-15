@@ -101,12 +101,12 @@ an error to happen instead.
 
 An entity may be declared using `em.new(name, key, fields, options)` where:
 
-| Argument    | Description |
-| --------- | ----------- |
-| `name`    | The name of the table |
+| Argument  | Description                                       |
+| --------- | ------------------------------------------------- |
+| `name`    | The name of the table                             |
 | `key`     | The primary key of the table, or nil to use rowid |
-| `fields`  | An array or map of fields |
-| `options` | Reserved |
+| `fields`  | An array or map of fields (optional)              |
+| `options` | Reserved (optional)                               |
 
 The table's `key` may be given either as a string or as a field per below. If a
 string is used, then `fields` must contain a field with a matching name. If a
