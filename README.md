@@ -29,56 +29,56 @@ than tables, but it's used here to avoid name collision with lua tables.)
 
 ### Module Members
 
-#### em.class
-A more verbose alias for m.c below.
+#### em.begin(strict)
+Begins a transaction. If strict is true, it fails if one's already begun.
 
 #### em.c
 A table of basic field types, described in more detail below.
 
-#### em.fkey
-A function for creating foreign key fields, described in more detail below.
+#### em.class
+A more verbose alias for `m.c` above.
 
 #### em.close()
 Close the database if it's been opened. Warning: This does not flush changes
 first. You almost certainly want to run em.flush() before running em.close().
-
-#### em.open(filename)
-Opens the database.
-
-#### em.db
-The underlying sqlite db object if it's been opened; otherwise, nil.
-
-#### em.new(name, key, fields, options) -> entity
-Defines a new entity description, as described below. (Note: this does not
-create it on the database, it only tells the entity manager that this entity
-exists.)
-
-#### em.get(name) -> entity
-Returns an existing entity by name.
-
-#### em.entities() -> iterator
-A pairs() style function for all the registered entities.
-
-#### em.begin(strict)
-Begins a transaction. If strict is true, it fails if one's already begun.
 
 #### em.commit(force)
 Commits a transaction. Unless force it true, this merely unwinds a single
 em.begin() statement, and the transaction is only committed once they're all
 unwound.
 
-#### em.transaction()
-Returns true if there's an active transaction; otherwise, returns false.
+#### em.db
+The underlying sqlite db object if it's been opened; otherwise, nil.
 
-#### em.rollback()
-Rollbacks a transaction, no matter the depth.
+#### em.entities() -> iterator
+A pairs() style function for all the registered entities.
+
+#### em.fkey(...)
+A function for creating foreign key fields, described in more detail below.
+
+#### em.flush()
+Flushes all changes to the database in a strict transaction.
+
+#### em.get(name) -> entity
+Returns an existing entity by name.
+
+#### em.new(name, key, fields, options) -> entity
+Defines a new entity description, as described below. (Note: this does not
+create it on the database, it only tells the entity manager that this entity
+exists.)
+
+#### em.open(filename)
+Opens the database.
 
 #### em.raw\_flush()
 Flushes all changes to the database, but does not begin/commit/rollback
 transactions.
 
-#### em.flush()
-Flushes all changes to the database in a strict transaction.
+#### em.rollback()
+Rollbacks a transaction, no matter the depth.
+
+#### em.transaction()
+Returns true if there's an active transaction; otherwise, returns false.
 
 #### em.version -> {major, minor, release}
 A version array in the form of `{major, minor, release}`, e.g. version 0.1.0 would be `{0, 1, 0}`.
@@ -202,17 +202,11 @@ is not met.
 
 ### Entity methods
 
-#### entity:new(data, skip) -> row
-Creates a new row with a given data table, where keys must represent fields
-on the table, and values should be appropriate to those fields. If skip is
-true, then various safety checks will be skipped (useful if you know the
-data is correct, for some reason).
+#### entity:create()
+Runs `entity:create_sql()` on the database.
 
-#### entity:has(key) -> bool
-Returns true if the entity has a row with the given key, otherwise false.
-
-#### entity:get(key) -> row
-Returns a row with the given key, or nil if there isn't any.
+#### entity:create\_sql() -> sql
+Returns SQL that can be used to create this table.
 
 #### entity:flush(skip\_fkeys) -> remaining
 Flushes all changed rows to the database. If `skip_fkeys` is true, then fields
@@ -220,11 +214,17 @@ that point to entities which aren't on the database yet will be nulled where
 possible, but any such rows will still be marked dirty. Returns the number of
 rows which still need to be saved.
 
-#### entity:create\_sql() -> sql
-Returns the SQL used to create this table.
+#### entity:get(key) -> row
+Returns a row with the given key, or nil if there isn't any.
 
-#### entity:create()
-Runs `entity:create_sql()` on the database.
+#### entity:has(key) -> bool
+Returns true if the entity has a row with the given key, otherwise false.
+
+#### entity:new(data, skip) -> row
+Creates a new row with a given data table, where keys must represent fields
+on the table, and values should be appropriate to those fields. If skip is
+true, then various safety checks will be skipped (useful if you know the
+data is correct, for some reason).
 
 #### entity:where(query) -> function
 Creates a function using the given query to fetch all matching rows from the
@@ -259,6 +259,28 @@ just retrieve that user's primary key.
 #### row.entity
 The entity object which the row belongs to.
 
+#### row:\_debug()
+Returns the row's inner data for debugging purposes.
+
+#### row:delete()
+Marks the row for deletion, and prevents further access. Note that the row
+isn't actually deleted on the database until the next row:flush() call is
+made.
+
+#### row:flush(skip\_fkeys) -> still\_dirty
+Propagates any changes to the database. If `skip_fkeys` is true, then it will
+attempt to null out any foreign keys that may not be present on the database
+yet, where possible. If it does so, it will remain dirty even if it succeeds.
+
+Returns true if it succeeds and the field is no longer dirty as a result;
+otherwise, returns false.
+
+#### row:fields() -> iterator
+Acts as a pairs() equivalent for all the fields on the row, including those
+currently set to nil. i.e.:
+
+for field,value in row:fields() do print(field, value) end
+
 #### row:get(field) -> value
 Retrieve the value for a given field by name. If the field is a foreign key
 field, this will retrieve the appropriate row object from the cache or
@@ -274,25 +296,3 @@ Sets the field to a new value, marking the row as dirty in the process. Note
 that changes aren't propogated to the database until the next successful
 row:flush() call is made, either directly or via em.flush() or
 the parent entity's entity:flush().
-
-#### row:flush(skip\_fkeys) -> still\_dirty
-Propagates any changes to the database. If `skip_fkeys` is true, then it will
-attempt to null out any foreign keys that may not be present on the database
-yet, where possible. If it does so, it will remain dirty even if it succeeds.
-
-Returns true if it succeeds and the field is no longer dirty as a result;
-otherwise, returns false.
-
-#### row:delete()
-Marks the row for deletion, and prevents further access. Note that the row
-isn't actually deleted on the database until the next row:flush() call is
-made.
-
-#### row:fields() -> iterator
-Acts as a pairs() equivalent for all the fields on the row, including those
-currently set to nil. i.e.:
-
-for field,value in row:fields() do print(field, value) end
-
-#### row:\_debug()
-Returns the row's inner data for debugging purposes.
