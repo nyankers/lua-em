@@ -909,14 +909,16 @@ local function new_row(entity, data, reread)
 		end
 	end
 
-	-- row functions
-	local functions = {
+	-- row members
+	local members = {
 		-- explicit get (fetches entities)
 		get = get,
 		-- explicit get (does not fetch entities)
 		raw = raw,
 		-- explicit set
 		set = set,
+		-- the row's entity
+		entity = entity,
 		-- flush changes to the db
 		flush = function(self, skip_fkeys)
 			local skipped
@@ -1035,13 +1037,13 @@ local function new_row(entity, data, reread)
 				updated = updated,
 				deleted = deleted,
 				dirty = dirty,
-				functions = functions
+				members = members
 			}
 		end,
 	}
 
 	function mt:__index(key)
-		local rv = functions[key]
+		local rv = members[key]
 
 		if rv ~= nil then
 			return rv

@@ -254,7 +254,10 @@ You can also prefix a field with an underscore (`_`) to access its raw value
 `row.owner` will retrieve that user as a row object, whereas `row._owner` will
 just retrieve that user's primary key.
 
-### Row Functions
+### Row Members
+
+#### row.entity
+The entity object which the row belongs to.
 
 #### row:get(field) -> value
 Retrieve the value for a given field by name. If the field is a foreign key
