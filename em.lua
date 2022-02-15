@@ -371,7 +371,7 @@ function em.open(filename)
 	em.db = sqlite3.open(filename)
 end
 
-local function get_virtual_fkey(parent, vfkey)
+local function get_vfkey(parent, vfkey)
 	if vfkey.get then
 		return vfkey.get
 	end
@@ -418,7 +418,42 @@ local function get_virtual_fkey(parent, vfkey)
 		vfkey.multi = true
 	end
 
-	vfkey.get = child:where(quote(fkey.name).." = ?")
+	local fkey_name = fkey.name
+
+	local where = child:where(quote(fkey_name).." = ?")
+
+	vfkey.get = function(pkey)
+		if vfkey.multi then
+			local set = {}
+
+			local db_results = where(pkey)
+			for _,row in ipairs(db_results) do
+				if row:raw(fkey_name) == pkey then
+					set[row] = true
+				end
+			end
+
+			for row in pairs(child.dirty) do
+				if row:raw(fkey_name) == pkey then
+					set[row] = true
+				end
+			end
+
+			local results = {}
+			for row in pairs(set) do
+				table.insert(results, row)
+			end
+
+			return results
+
+		else
+			local result = child.caches[fkey_name][pkey]
+			if result == nil then
+				result = where(pkey)[1]
+			end
+			return result
+		end
+	end
 
 	return vfkey.get
 end
@@ -603,6 +638,7 @@ function em.new(entity_name, key, fields, options)
 	self.field_names = field_names
 	self.unique_fields = unique_fields
 	self.cache = caches[key]
+	self.rows = cache()
 	self.caches = caches
 	self.keep = {}
 	self.dirty = {}
@@ -758,6 +794,12 @@ local function new_row(entity, data, reread)
 		end
 	end
 
+	if reread then
+		updated.rowid = data.rowid
+	else
+		values.rowid = data.rowid
+	end
+
 	local mt = {}
 
 	local row = setmetatable({}, mt)
@@ -770,6 +812,7 @@ local function new_row(entity, data, reread)
 			end
 
 			local rowid = updated.rowid
+			entity.rows[rowid] = row
 			if rowid ~= nil and entity.key == "rowid" then
 				entity.cache[rowid] = row
 			end
@@ -815,7 +858,7 @@ local function new_row(entity, data, reread)
 	end
 
 	-- get a row value
-	local function raw(self, key)
+	local function value(self, key)
 		local rv
 
 		if deleted then
@@ -830,32 +873,41 @@ local function new_row(entity, data, reread)
 		return rv
 	end
 
+	local function raw(self, key)
+		local rv = value(self, key)
+
+		if type(rv) == "table" then
+			rv = rv:raw(rv.entity.key)
+		end
+
+		return rv
+	end
+
 	-- get a row value and fetch it
 	local function get(self, key)
 		local field = fields[key]
 
 		if field == nil then
+			if key == "rowid" then
+				return value(self, key)
+			end
+
 			return nil
 		end
 
 		if field.virtual then
-			local get = get_virtual_fkey(entity, field)
+			local get = get_vfkey(entity, field)
 
 			if get == nil then
 				error("Can't access "..entity.name.."."..field.name.." child table "..field.entity)
 			end
 
-			local pkey = raw(self, entity.key)
+			local pkey = value(self, entity.key)
 
-			local results = get(pkey)
-			if field.multi then
-				return results
-			else
-				return results[1]
-			end
+			return get(pkey)
 		end
 
-		local rv = raw(self, key)
+		local rv = value(self, key)
 
 		if rv == nil then
 			return nil
@@ -927,7 +979,7 @@ local function new_row(entity, data, reread)
 				local statement
 				local code
 
-				local rowid = raw(self, "rowid")
+				local rowid = value(self, "rowid")
 
 				if deleted then
 					statement = entity.statements.delete()
@@ -959,8 +1011,7 @@ local function new_row(entity, data, reread)
 							value = nil
 							skipped = true
 						else
-							local key = entities[field.entity].key
-							value = value:get(key)
+							value = value:raw(value.entity.key)
 
 							if value == nil then
 								return false
@@ -1045,16 +1096,12 @@ local function new_row(entity, data, reread)
 	function mt:__index(key)
 		local rv = members[key]
 
-		if rv ~= nil then
+		if rv ~= nil or type(key) ~= "string" then
 			return rv
 		end
 
-		if fields[key] then
-			return get(self, key)
-		end
-
 		local lower = key:lower()
-		if fields[lower] then
+		if fields[lower] or key == "rowid" then
 			return get(self, lower)
 		end
 
@@ -1072,6 +1119,14 @@ local function new_row(entity, data, reread)
 
 	if reread and transaction then
 		transaction.update[hook] = true
+	end
+
+	-- cache the row
+	for i,name in ipairs(entity.unique_fields) do
+		entity.caches[name][data[name]] = row
+	end
+	if data.rowid then
+		entity.rows[data.rowid] = row
 	end
 
 	return row
@@ -1179,10 +1234,6 @@ local function get_entity(self, statement, value)
 
 	local row = new_row(self, values, read)
 
-	for i,name in ipairs(self.unique_fields) do
-		self.caches[name][values[name]] = row
-	end
-
 	return row
 end
 
@@ -1287,7 +1338,7 @@ local function where_call(self, ...)
 	local entity = self.entity
 	local field_names = entity.field_names
 	local key = entity.key
-	local cache = entity.cache
+	local rows = entity.rows
 
 	confirm(statement:bind_values(...), "Failed to bind values")
 
@@ -1302,9 +1353,7 @@ local function where_call(self, ...)
 			data[field] = value
 		end
 
-		local pkey = data[key]
-
-		local result = cache[pkey]
+		local result = rows[data.rowid]
 		if result == nil then
 			result = new_row(entity, data)
 		end
