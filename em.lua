@@ -27,6 +27,7 @@ em.version_string = table.concat(em.version, ".")
 
 -- registers
 em.default_key = nil
+em.retry = false
 
 -- module variables
 local entities = {}
@@ -46,31 +47,84 @@ local function quote(name)
 	return "\""..name.."\""
 end
 
+local function step(statement)
+	local code
+
+	local attempts = 0
+	local retry = em.retry
+	local done = false
+	
+	repeat
+		attempts = attempts + 1
+		code = statement:step()
+
+		if transaction or code ~= sqlite3.BUSY then
+			done = true
+		elseif type(retry) == "number" and attempts >= retry then
+			done = true
+		elseif (type(retry) == "function" or type(retry) == "table") and retry(attempts) then
+			done = true
+		else
+			done = retry
+		end
+
+	until done
+
+	return code
+end
+
 -- Execute a statement that only has zero or one result
 local function execute(statement, f)
-	local result, rv
+	local code, rv
 
 	if f then
-		result = statement:step()
-		if result == sqlite3.DONE then
+		code = step(statement)
+
+		if code == sqlite3.DONE then
 			return nil
-		elseif result ~= sqlite3.ROW then
+		elseif code ~= sqlite3.ROW then
 			statement:reset()
-			error("Unexpected step result "..result)
+			error("Unexpected step code "..code)
 		end
 
 		rv = f(statement)
 	end
 
-	result = statement:step()
-	if result ~= sqlite3.DONE then
+	code = step(statement)
+
+	if code ~= sqlite3.DONE then
 		statement:reset()
-		error("Unexpected step result "..result)
+		error("Unexpected step code "..code)
 	end
 
 	statement:reset()
 
 	return rv
+end
+
+-- Execute a statement that only has zero or more results
+local function execute_multi(statement, f)
+	local code, results
+
+	code = step(statement)
+
+	results = {}
+
+	f = f or statement.get_values
+
+	while code == sqlite3.ROW do
+		table.insert(results, f(statement))
+
+		code = statement:step()
+	end
+
+	if code == sqlite3.DONE then
+		statement:reset()
+		return results
+	else
+		statement:reset()
+		error("Unexpected step code "..code)
+	end
 end
 
 local function get_first(statement)
@@ -80,7 +134,7 @@ local function get_first(statement)
 end
 
 -- confirm that a sqlite3 call worked
-local function confirm(result, error_msg, ...)
+local function confirm(code, error_msg, ...)
 	local acceptable = table.pack(...)
 	local n = acceptable.n
 	if n == 0 then
@@ -89,7 +143,7 @@ local function confirm(result, error_msg, ...)
 	end
 
 	for i=1,n do
-		if result == acceptable[i] then
+		if code == acceptable[i] then
 			return
 		end
 	end
@@ -98,7 +152,7 @@ local function confirm(result, error_msg, ...)
 		error_msg = "Sqlite error"
 	end
 
-	error(error_msg.." (#"..result..")", 2)
+	error(error_msg.." (#"..code..")", 2)
 end
 
 local cache_mt = { __mode = "v" }
@@ -768,7 +822,7 @@ local function new_row(entity, data, reread)
 
 			if entity.dirty[row] then
 				local statement
-				local result
+				local code
 
 				local rowid = raw(self, "rowid")
 
@@ -817,13 +871,13 @@ local function new_row(entity, data, reread)
 				end
 
 				repeat
-					result = statement:step()
+					code = step(statement)
 
-					if result ~= sqlite3.ROW and result ~= sqlite3.DONE then
+					if code ~= sqlite3.ROW and code ~= sqlite3.DONE then
 						statement:reset()
-						error("Failed to call statement: "..result)
+						error("Failed to call statement: "..code)
 					end
-				until result == sqlite3.DONE
+				until code == sqlite3.DONE
 
 				if rowid == nil then
 					merge{rowid = statement:last_insert_rowid()}
@@ -1134,14 +1188,7 @@ local function where_call(self, ...)
 
 	confirm(statement:bind_values(...), "Failed to bind values")
 
-	local results = {}
-
-	-- just store the data until we can reset()
-	for row in statement:rows() do
-		table.insert(results, row)
-	end
-
-	statement:reset()
+	local results = execute_multi(statement)
 
 	for i,row in ipairs(results) do
 		local data = {}

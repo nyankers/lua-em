@@ -92,9 +92,31 @@ These are values that a user may set to control how the module behaves.
 
 #### em.default\_key (string or nil)
 
+Default: `nil`
+
 When calling `em.new()` with a field `key`, this name is used when none is
 given. If it's `nil` (or any other non-string value), then such attempts cause
 an error to happen instead.
+
+#### em.retry (integer, boolean, or function)
+
+Default: `false`
+
+This register tells the entity manager how to react when it receives a `BUSY`
+code.
+
+If a number is given, it will try that many times (so `em.retry = 1` will only
+try once total).
+
+If a function is given, it'll call the function, passing along the current
+number of attempts. If the function returns true, then it will retry;
+otherwise, it will not.
+
+Otherwise, a truthy value will make it retry indefinitely, whereas a falsy
+value will only try once.
+
+Note that this register does not imply any waiting period. That can be done by
+configuring the database directly if needed, by accessing `em.db`.
 
 
 ## Entities
