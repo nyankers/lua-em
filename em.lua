@@ -155,6 +155,18 @@ local function confirm(code, error_msg, ...)
 	error(error_msg.." (#"..code..")", 2)
 end
 
+local function table_remove(t, e)
+	local idx = 1
+
+	while t[idx] ~=  nil and t[idx] ~= e do
+		idx = idx + 1
+	end
+
+	if t[idx] then
+		table.remove(t, idx)
+	end
+end
+
 local cache_mt = { __mode = "v" }
 local function cache()
 	return setmetatable({}, cache_mt)
@@ -189,15 +201,20 @@ local function class(default_options)
 
 		if options then
 			if type(options) == "string" then
+				local optstr = options
 				if result.class == "ID" then
 					options = {
-						required = options:match("!"),
+						required = optstr:match("!"),
 					}
 				else
 					options = {
-						required = not options:match("?"),
-						unique = options:match("!"),
+						required = not optstr:match("?"),
+						unique = optstr:match("!"),
 					}
+				end
+
+				if result.class =="ENTITY" and optstr:match("*") then
+					result.virtual = true
 				end
 			end
 
@@ -354,6 +371,58 @@ function em.open(filename)
 	em.db = sqlite3.open(filename)
 end
 
+local function get_virtual_fkey(parent, vfkey)
+	if vfkey.get then
+		return vfkey.get
+	end
+
+	local child = entities[vfkey.entity]
+
+	if child == nil then
+		return nil
+	end
+
+	local pname = parent.name
+	local fkey = vfkey.key
+
+	if fkey ~= nil then
+		fkey = child.fields[fkey]
+		if fkey == nil then
+			error("Parent table "..parent.name.."."..vfkey.name.." refers to nonexistent child field "..child.name.."."..vfkey.key)
+		end
+	else
+		for name,field in pairs(child.fields) do
+			if field.class == "ENTITY" and field.entity == pname and not field.virtual then
+				if fkey == nil then
+					fkey = field
+				else
+					error("Parent table "..parent.name.."."..vfkey.name.." refers ambiguously to child table "..child.name.." which has multiple fkeys to parent")
+				end
+			end
+		end
+
+		if fkey == nil then
+			error("Parent table "..parent.name.."."..vfkey.name.." refers to non-child "..child.name)
+		end
+	end
+
+	if fkey.unique then
+		if vfkey.multi == true then
+			error("Parent table "..parent.name.."."..vfkey.name.." refers to child "..child.name.."."..fkey.name.." (expected multi, got singular)")
+		end
+		vfkey.multi = false
+	else
+		if vfkey.multi == false then
+			error("Parent table "..parent.name.."."..vfkey.name.." refers to child "..child.name.."."..fkey.name.." (expected singular, got multi)")
+		end
+		vfkey.multi = true
+	end
+
+	vfkey.get = child:where(quote(fkey.name).." = ?")
+
+	return vfkey.get
+end
+
 -- create a new table
 function em.new(entity_name, key, fields, options)
 	if entities[entity_name] then
@@ -447,7 +516,7 @@ function em.new(entity_name, key, fields, options)
 
 		-- string fields for convenience
 		if type(field) == "string" then
-			local tag, flags = field:match("^(.-)([?!]*)$")
+			local tag, flags = field:match("^(.-)([?!*]*)$")
 
 			local class = classes[tag]
 
@@ -486,6 +555,16 @@ function em.new(entity_name, key, fields, options)
 			if key ~= name then
 				error("ID can only be used for primary keys")
 			end
+		end
+	end
+
+	for name,field in pairs(fields) do
+		if field.virtual then
+			table_remove(field_names, name)
+			if field.unique then
+				table_remove(unique_fields, name)
+			end
+			field.required = false
 		end
 	end
 
@@ -753,14 +832,36 @@ local function new_row(entity, data, reread)
 
 	-- get a row value and fetch it
 	local function get(self, key)
+		local field = fields[key]
+
+		if field == nil then
+			return nil
+		end
+
+		if field.virtual then
+			local get = get_virtual_fkey(entity, field)
+
+			if get == nil then
+				error("Can't access "..entity.name.."."..field.name.." child table "..field.entity)
+			end
+
+			local pkey = raw(self, entity.key)
+
+			local results = get(pkey)
+			if field.multi then
+				return results
+			else
+				return results[1]
+			end
+		end
+
 		local rv = raw(self, key)
 
 		if rv == nil then
 			return nil
 		end
 
-		local field = fields[key]
-		if field and field.class == "ENTITY" and type(rv) ~= "table" then
+		if field.class == "ENTITY" and type(rv) ~= "table" then
 			local other = entities[field.entity]
 
 			rv = other:get(rv)

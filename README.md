@@ -157,7 +157,7 @@ string.
 | Field option | Description                           |
 | `required`   | Defaults to true, disabled with `"?"` |
 | `unique`     | Defaults to false, enabled with `"!"` |
-| `name`       | May be given in the options table.    |
+| `name`       | May be given in the options table     |
 
 The `em.c.id` field behaves differently in two ways:
 
@@ -168,11 +168,20 @@ The `em.c.id` field behaves differently in two ways:
 
 Foreign key fields can be denoted in three ways:
 
-1. `em.fkey(entity, ...)`, with parameters after entity working as the above
+1. `em.fkey(entity, ...)`, with parameters after `entity` working as the above
    field type functions.
 2. A string with the entity's name, followed by any string options.
 3. The entity object itself, though no options may be provided with this
    approach.
+
+Foreign keys additionally have the following field options:
+
+| Field option | Description                                                            |
+| ------------ | ---------------------------------------------------------------------- |
+| `entity`     | The name of the related entity, set automatically by the above methods |
+| `virtual`    | Defines a virtual foreign key field if `true`, enabled with `"*"`      |
+| `key`        | The key on the child table, only used by virtual foreign keys          |
+| `multi`      | Whether a virtual foreign key will return multiple elements or not     |
 
 In the case of `em.fkey()`, the entity parameter may be either an entity
 object or a string. Foreign key fields may referenced by name before they're
@@ -181,6 +190,14 @@ introduced via em.new().
 Foreign key fields automatically use the primary key of the related field.
 They may be set to a row object of the related object directly, or to a
 primitive value that represents one (e.g. `data.owner = "username"`)
+
+Virtual foreign keys, denoted by the `virtual` field option, represent access
+to child tables. The `key` option can be used when the child table has multiple
+foreign keys to the parent table, but is otherwise unnecessary. A single
+element or `nil` will be returned if the child's foreign key is unique;
+otherwise, an array of elements will be returned. If the `multi` field option
+is set to `true` or `false`, a runtime error will be given if this expectation
+is not met.
 
 
 ### Entity methods
