@@ -236,7 +236,10 @@ The resulting function has a signature like `where(...)` accepts these
 parameters and binds them in order they're given (using lsqlite3's
 `stmt:bind_values(...)`).
 
-**Note:** This function currently isn't supported in transactions.
+**Note:** This function currently isn't supported in transactions. Furthermore,
+the results will honor the database's current state, *not* any pending changes.
+Thus, if this distinction would cause issues, run `em.flush()` before using
+these functions.
 
 
 ## Rows
