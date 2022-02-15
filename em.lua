@@ -180,7 +180,7 @@ local function entity_class(entity, ...)
 
 	return class{class="ENTITY", entity=entity }(...)
 end
-em.entity = entity_class
+em.fkey = entity_class
 
 
 ----------------------

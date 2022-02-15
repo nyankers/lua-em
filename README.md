@@ -35,7 +35,7 @@ A more verbose alias for m.c below.
 #### em.c
 A table of basic field types, described in more detail below.
 
-#### em.entity
+#### em.fkey
 A function for creating foreign key fields, described in more detail below.
 
 #### em.close()
@@ -146,13 +146,13 @@ The `em.c.id` field behaves differently in two ways:
 
 Foreign key fields can be denoted in three ways:
 
-1. `em.entity(entity, ...)`, with parameters after entity working as the above
+1. `em.fkey(entity, ...)`, with parameters after entity working as the above
    field type functions.
 2. A string with the entity's name, followed by any string options.
 3. The entity object itself, though no options may be provided with this
    approach.
 
-In the case of `em.entity()`, the entity parameter may be either an entity
+In the case of `em.fkey()`, the entity parameter may be either an entity
 object or a string. Foreign key fields may referenced by name before they're
 introduced via em.new().
 
