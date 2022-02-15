@@ -167,16 +167,11 @@ local function table_remove(t, e)
 	end
 end
 
+-- creates a cache
 local cache_mt = { __mode = "v" }
 local function cache()
 	return setmetatable({}, cache_mt)
 end
-
-local weakmap_mt = { __mode = "k" }
-local function weakmap()
-	return setmetatable({}, weakmap_mt)
-end
-
 
 -------------------
 -- Field classes --
