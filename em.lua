@@ -27,12 +27,14 @@ em.version_string = table.concat(em.version, ".")
 
 -- registers
 em.default_key = nil
+em.on_change = nil
 em.retry = false
 
 -- module variables
 local entities = {}
 local transaction = nil
 local check_statement = nil
+local pending_changes = false
 
 -- entity metatable
 local entity = {}
@@ -164,6 +166,17 @@ local function table_remove(t, e)
 
 	if t[idx] then
 		table.remove(t, idx)
+	end
+end
+
+local function mark_dirty(entity, row)
+	entity.dirty[row] = true
+	if not pending_changes then
+		pending_changes = true
+
+		if em.on_change then
+			em.on_change()
+		end
 	end
 end
 
@@ -727,6 +740,8 @@ function em.raw_flush()
 	if total > 0 then
 		error("Was not able to flush all records, likely caused by an uncaught circular dependency")
 	end
+
+	pending_changes = false
 end
 
 function em.flush()
@@ -754,6 +769,10 @@ end
 -- check if currently in a transaction
 function em.transaction()
 	return transaction ~= nil
+end
+
+function em.pending_changes()
+	return pending_changes
 end
 
 
@@ -952,7 +971,7 @@ local function new_row(entity, data, reread)
 			end
 
 			values[key] = value
-			entity.dirty[row] = true
+			mark_dirty(entity, row)
 		end
 	end
 
@@ -1036,7 +1055,7 @@ local function new_row(entity, data, reread)
 
 				entity.dirty[row] = false
 
-				if not skip_fkeys then
+				if not skipped then
 					if transaction then
 						dirty = true
 					else
@@ -1054,11 +1073,10 @@ local function new_row(entity, data, reread)
 				return
 			end
 
-			-- uninserted
 			if updated.rowid == nil and values.rowid == nil then
 				entity.dirty[row] = nil
 			else
-				entity.dirty[row] = true
+				mark_dirty(entity, row)
 			end
 
 			deleted = true
@@ -1167,7 +1185,7 @@ function entity:new(data, skip_check)
 		self.caches[name][value] = row
 	end
 
-	self.dirty[row] = true
+	mark_dirty(self, row)
 	
 	return row
 end

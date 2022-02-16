@@ -70,6 +70,9 @@ exists.)
 #### em.open(filename)
 Opens the database.
 
+#### em.pending\_changes()
+Returns `true` if there are any changes to flush; otherwise, `false`.
+
 #### em.raw\_flush()
 Flushes all changes to the database, but does not begin/commit/rollback
 transactions.
@@ -97,6 +100,18 @@ Default: `nil`
 When calling `em.new()` with a field `key`, this name is used when none is
 given. If it's `nil` (or any other non-string value), then such attempts cause
 an error to happen instead.
+
+#### em.on\_change (function or nil)
+
+Default: `nil`
+
+If defined, this register will be called whenever `em` gains its first pending
+change. Future changes will not call this until `em.flush()` (or
+`em.raw_flush()`) is called.
+
+Flushing individual entities or rows will currently not reset
+`em.pending_changes()` and thus will not cause `em.on_change()` to retrigger,
+even if all the pending changes are manually flushed this way.
 
 #### em.retry (integer, boolean, or function)
 
