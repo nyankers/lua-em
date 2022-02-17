@@ -40,6 +40,9 @@ local pending_changes = false
 local entity = {}
 local entity_mt = { __index = entity }
 
+-- lua compatibility
+local unpack = unpack or table.unpack or error("No unpack()")
+
 -----------------------
 -- Utility functions --
 -----------------------
@@ -136,18 +139,11 @@ local function get_first(statement)
 end
 
 -- confirm that a sqlite3 call worked
-local function confirm(code, error_msg, ...)
-	local acceptable = table.pack(...)
-	local n = acceptable.n
-	if n == 0 then
-		acceptable = { sqlite3.OK }
-		n = 1
-	end
+local function confirm(code, error_msg, acceptable)
+	acceptable = acceptable or { [sqlite3.OK] = true }
 
-	for i=1,n do
-		if code == acceptable[i] then
-			return
-		end
+	if acceptable[code] then
+		return
 	end
 
 	if error_msg == nil then
@@ -156,6 +152,7 @@ local function confirm(code, error_msg, ...)
 
 	error(error_msg.." (#"..code..")", 2)
 end
+em.confirm = confirm
 
 local function table_remove(t, e)
 	local idx = 1
@@ -1318,7 +1315,7 @@ function entity:create_sql()
 	end
 
 	for _,data in ipairs(fkeys) do
-		local field, entity, fkey = table.unpack(data)
+		local field, entity, fkey = unpack(data)
 		table.insert(lines, "FOREIGN KEY("..field..") REFERENCES "..entity.."("..fkey..")"..
 			" ON UPDATE CASCADE ON DELETE CASCADE")
 	end
