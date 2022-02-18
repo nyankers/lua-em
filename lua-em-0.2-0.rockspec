@@ -1,8 +1,8 @@
 package = "lua-em"
-version = "0.1-0"
+version = "0.2-0"
 source = {
 	url = "git://github.com/nyankers/lua-em",
-	tag = "0.1.0",
+	tag = "0.2.0",
 }
 description = {
 	summary = "Sqlite Entity Manager",
@@ -19,6 +19,6 @@ build = {
 	}
 }
 dependencies = {
-	"lua >= 5.1, < 5.3",
+	"lua >= 5.1, < 5.4",
 	"lsqlite3 >= 0.9.5",
 }

@@ -22,7 +22,7 @@ local sqlite3 = require("lsqlite3")
 local em = {}
 
 -- version
-em.version = { 0, 1, 0 }
+em.version = { 0, 2, 0 }
 em.version_string = table.concat(em.version, ".")
 
 -- registers
