@@ -347,7 +347,7 @@ name"` or `{"is_null", "name"}`.
 | `all`     | Aggregate | `AND` | The expression is true only if all of its parts are true. |
 | `any`     | Aggregate | `OR`  | The expression is true if even one of its parts are true. |
 | `is_null` |     Unary | `IS NULL` | Returns true if the value is `NULL` / `nil`. |
-| `is_not_null`   Unary | `IS NOT NULL` | Returns true if the value is not `NULL` / `nil`. |
+| `is_not_null`|  Unary | `IS NOT NULL` | Returns true if the value is not `NULL` / `nil`. |
 | `>`       |    Binary | `>`   | Returns true if the left-hand side is greater than the right-hand side. |
 | `>=`      |    Binary | `>=`  | Returns true if the left-hand side is greater than or equal to the right-hand side. |
 | `<`       |    Binary | `<`   | Returns true if the left-hand side is less than the right-hand side. |
