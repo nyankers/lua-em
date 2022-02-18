@@ -22,7 +22,7 @@ local sqlite3 = require("lsqlite3")
 local em = {}
 
 -- version
-em.version = { 0, 2, 0 }
+em.version = { 0, 2, 1 }
 em.version_string = table.concat(em.version, ".")
 
 -- registers
@@ -426,31 +426,11 @@ local function get_vfkey(parent, vfkey)
 
 	local fkey_name = fkey.name
 
-	local where = child:where({fkey_name, "=", ":key"})
+	local where = child:query({fkey_name, "=", ":key"})
 
 	vfkey.get = function(pkey)
 		if vfkey.multi then
-			local set = {}
-
-			local db_results = where{key=pkey}
-			for _,row in ipairs(db_results) do
-				if row:raw(fkey_name) == pkey then
-					set[row] = true
-				end
-			end
-
-			for row in pairs(child.dirty) do
-				if row:raw(fkey_name) == pkey then
-					set[row] = true
-				end
-			end
-
-			local results = {}
-			for row in pairs(set) do
-				table.insert(results, row)
-			end
-
-			return results
+			return where{key=pkey}
 
 		else
 			local result = child.caches[fkey_name][pkey]
