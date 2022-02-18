@@ -241,20 +241,11 @@ on the table, and values should be appropriate to those fields. If skip is
 true, then various safety checks will be skipped (useful if you know the
 data is correct, for some reason).
 
-#### entity:where(query) -> function
-Creates a function using the given query to fetch all matching rows from the
-database. The query should be assumed to follow SQL along the lines of
-`SELECT * FROM entity WHERE `. Parameters may be given using sqlite's usual
-numeric parameter approach, e.g. `entity:where("owner = ?")`.
+#### entity:query(...) -> function
+Creates a function using the given query to fetch all matching rows. See below
+on how to format queries.
 
-The resulting function has a signature like `where(...)` accepts these
-parameters and binds them in order they're given (using lsqlite3's
-`stmt:bind_values(...)`).
-
-**Note:** This function currently isn't supported in transactions. Furthermore,
-the results will honor the database's current state, *not* any pending changes.
-Thus, if this distinction would cause issues, run `em.flush()` before using
-these functions.
+**Note:** This function currently isn't supported in transactions.
 
 
 ## Rows
@@ -285,6 +276,9 @@ Marks the row for deletion, and prevents further access. Note that the row
 isn't actually deleted on the database until the next row:flush() call is
 made.
 
+#### row:deleted()
+Returns `true` if the row's been deleted; otherwise, false.
+
 #### row:flush(skip\_fkeys) -> still\_dirty
 Propagates any changes to the database. If `skip_fkeys` is true, then it will
 attempt to null out any foreign keys that may not be present on the database
@@ -314,3 +308,99 @@ Sets the field to a new value, marking the row as dirty in the process. Note
 that changes aren't propogated to the database until the next successful
 row:flush() call is made, either directly or via em.flush() or
 the parent entity's entity:flush().
+
+
+## Queries
+
+Queries take a form similar to:
+
+```
+entity:query({"any", "name = :name", "nickname = :name"}, "timestamp < :time")
+```
+
+Which would result in SQL equivalent to `("name" = :name OR "nickname" = :name)
+AND timestamp < :time`.
+
+### Query Functions
+
+If multiple parameters are passed into the `entity:query()` method (like the
+above example), they must all be met, equivalent to the `all` aggregate
+function below.
+
+An array beginning with an aggregate function by name (such as `"any"`) will be
+use that aggregate, with each element in the array after that being an
+expression. You may stack aggregate functions, as each entry in the array will
+be parsed as an expression, for example `{"any", {"all", "name = :name",
+"timestamp < :time"}, "nickname = :name"}`
+
+In addition to aggregate functions, there are also binary and unary functions.
+
+Binary functions are mixin style, e.g. `"name < :name"`. If non-string values
+are needed (such as a numeric constant), they can also be formed via tables,
+e.g. `{"name", "<", ":name"}` would be the equivalent of the former string.
+
+Unary functions are in the form of function-then-value. For example, `"is_null
+name"` or `{"is_null", "name"}`.
+
+| Function  | Type      | SQL   | Description |
+| --------- | --------- | ----- | ----------- |
+| `all`     | Aggregate | `AND` | The expression is true only if all of its parts are true. |
+| `any`     | Aggregate | `OR`  | The expression is true if even one of its parts are true. |
+| `is_null` |     Unary | `IS NULL` | Returns true if the value is `NULL` / `nil`. |
+| `is_not_null`   Unary | `IS NOT NULL` | Returns true if the value is not `NULL` / `nil`. |
+| `>`       |    Binary | `>`   | Returns true if the left-hand side is greater than the right-hand side. |
+| `>=`      |    Binary | `>=`  | Returns true if the left-hand side is greater than or equal to the right-hand side. |
+| `<`       |    Binary | `<`   | Returns true if the left-hand side is less than the right-hand side. |
+| `<=`      |    Binary | `<=`  | Returns true if the left-hand side is less than or equal to the right-hand side. |
+| `=`       |    Binary | `=`   | Returns true if the left-hand side is equal to the right-hand side. |
+| `~=`      |    Binary | `<>`  | Returns true if the left-hand side is not equal to the right-hand side. |
+
+### Query Values
+
+A table row may be accessed by name directly. This is not case sensitive, so
+the row "name" may be accessed via `"name"`, `"NamE"`, or even `"NAME"`.
+
+Parameters may be accessed by beginning a string with a colon (`:`), e.g.
+`":name"`. They automatically become lowercase, so even if you use `":NAME"`,
+calling the query will require using the lowercase version. However, no
+parameter can begin with a `_`, as these are reserved for lua-em's use.
+
+Any other value is treated as a constant, though you can make this explicit by
+making it a one-element array, e.g. if you need a query that looks up everyone
+whose name is `"name"`, you might do `{"name", "=", {"name}"}`.
+
+Functions are case sensitive, however.
+
+### Query Strings
+
+Internally, lua-em expects query expressions in the form of arrays, e.g.
+`{"name", "=", ":name"}`, but it will accept strings in lieu of this as a
+convenience. However, the logic backing this is not very sophisticated, it
+merely converts the string into an array where each word is an element. Thus,
+`"name = John Smith"` would become `{"name", "=", "John", "Smith"}`, which is
+not a valid expression. It's suggested to only use these strings for relatively
+simple expressions.
+
+### Using the Query
+
+Once you have a query, you can use it by calling it, passing a table of
+parameters as its only value. The keys of this table must be every `:parameter`
+used, though no colon is necessary, and they must be lowercase. For example,
+the query `{"all", "name = :NAME", "nickname = :nickname"}` would expect the
+keys `name` and `nickname`, e.g. `query{name="John Smith", nickname="Joe"}`.
+
+If the query has no parameters, no table is necessary.
+
+The query also has a number of fields that may be useful for debugging and
+other purposes:
+
+#### query.entity
+The entity the query was written for.
+
+#### query.sql
+The SQL the query will use.
+
+#### query.test(row, values)
+A function that may be passed a row object and a values table to see if the row
+matches the query. The values table would be equivalent to the table you'd pass
+in to the query itself.

@@ -86,6 +86,7 @@ local function execute(statement, f)
 		code = step(statement)
 
 		if code == sqlite3.DONE then
+			statement:reset()
 			return nil
 		elseif code ~= sqlite3.ROW then
 			statement:reset()
@@ -425,13 +426,13 @@ local function get_vfkey(parent, vfkey)
 
 	local fkey_name = fkey.name
 
-	local where = child:where(quote(fkey_name).." = ?")
+	local where = child:where({fkey_name, "=", ":key"})
 
 	vfkey.get = function(pkey)
 		if vfkey.multi then
 			local set = {}
 
-			local db_results = where(pkey)
+			local db_results = where{key=pkey}
 			for _,row in ipairs(db_results) do
 				if row:raw(fkey_name) == pkey then
 					set[row] = true
@@ -454,7 +455,7 @@ local function get_vfkey(parent, vfkey)
 		else
 			local result = child.caches[fkey_name][pkey]
 			if result == nil then
-				result = where(pkey)[1]
+				result = where{key=pkey}[1]
 			end
 			return result
 		end
@@ -982,6 +983,10 @@ local function new_row(entity, data, reread)
 		set = set,
 		-- the row's entity
 		entity = entity,
+		-- whether the row's been deleted or not
+		deleted = function(self)
+			return deleted
+		end,
 		-- flush changes to the db
 		flush = function(self, skip_fkeys)
 			local skipped
@@ -1335,26 +1340,260 @@ function entity:create()
 	return true
 end
 
--- Where clauses
+----------------------
+-- Query statements --
+----------------------
 
-local where = {}
+local query = {}
 
-local function where_call(self, ...)
+local query_functions = {
+	lua = {
+		param = function(context, a)
+			return function(row, params)
+				return params[a]
+			end
+		end,
+		field = function(context, a)
+			return function(row, params)
+				return row:raw(a)
+			end
+		end,
+		const = function(context, a)
+			return function(row, params)
+				return a
+			end
+		end,
+		uni = {
+			is_null = function(context, a)
+				return function(row, params)
+					return a(row, params) == nil
+				end
+			end,
+			is_not_null = function(context, a)
+				return function(row, params)
+					return a(row, params) ~= nil
+				end
+			end,
+		},
+		bi = {
+			[">"] = function(context, a, b)
+				return function(row, params)
+					return a(row, params) > b(row, params)
+				end
+			end,
+			[">="] = function(context, a, b)
+				return function(row, params)
+					return a(row, params) >= b(row, params)
+				end
+			end,
+			["<"] = function(context, a, b)
+				return function(row, params)
+					return a(row, params) < b(row, params)
+				end
+			end,
+			["<="] = function(context, a, b)
+				return function(row, params)
+					return a(row, params) <= b(row, params)
+				end
+			end,
+			["="] = function(context, a, b)
+				return function(row, params)
+					local a = a(row, params)
+					local b = b(row, params)
+					return a ~= nil and b ~= nil and a == b
+				end
+			end,
+			["~="] = function(context, a, b)
+				return function(row, params)
+					local a = a(row, params)
+					local b = b(row, params)
+					return a == nil or b == nil or a ~= b
+				end
+			end,
+		},
+		aggregates = {
+			any = function(context, query)
+				if #query == 1 then
+					return query[1]
+				end
+
+				return function(row, params)
+					for _,f in ipairs(query) do
+						if f(row, params) then
+							return true
+						end
+					end
+					return false
+				end
+			end,
+			all = function(context, query)
+				if #query == 1 then
+					return query[1]
+				end
+
+				return function(row, params)
+					for _,f in ipairs(query) do
+						if not f(row, params) then
+							return false
+						end
+					end
+					return true
+				end
+			end,
+		}
+	},
+	sql = {
+		param = function(context, a)
+			return ":"..a
+		end,
+		field = function(context, a)
+			return quote(a)
+		end,
+		const = function(context, a)
+			local n = context.const_count + 1
+			context.constants["_"..n] = a
+			context.const_count = n
+			return ":_"..n
+		end,
+		uni = {
+			is_null = function(context, a)
+				return a.." IS NULL"
+			end,
+			is_not_null = function(context, a)
+				return a.." IS NOT NULL"
+			end,
+		},
+		bi = {
+			[">"] = function(context, a, b)
+				return a.." > "..b
+			end,
+			[">="] = function(context, a, b)
+				return a.." >= "..b
+			end,
+			["<"] = function(context, a, b)
+				return a.." < "..b
+			end,
+			["<="] = function(context, a, b)
+				return a.." <= "..b
+			end,
+			["="] = function(context, a, b)
+				return a.." = "..b
+			end,
+			["~="] = function(context, a, b)
+				return a.." <> "..b
+			end,
+		},
+		aggregates = {
+			any = function(context, query)
+				if #query == 1 then
+					return query[1]
+				end
+
+				return "("..table.concat(query, " OR ")..")"
+			end,
+			all = function(context, query)
+				if #query == 1 then
+					return query[1]
+				end
+
+				return "("..table.concat(query, " AND ")..")"
+			end,
+		}
+	}
+}
+
+local function parse_query_value(class, context, value)
+	if type(value) == "table" then
+		return class.const(context, value[1])
+	elseif type(value) == "string" then
+		value = value:lower()
+
+		local param = value:match("^:(.+)$")
+		if param and not param:match("^_") then
+			return class.param(context, param)
+		end
+
+		if context.entity.fields[value] then
+			return class.field(context, value)
+		end
+
+		local text = value:match("^'(.+)'$")
+		if text then
+			return class.const(context, text)
+		end
+	end
+
+	return class.const(context, value)
+end
+
+local function parse_query(class, context, query)
+	if type(query) == "string" then
+		local array ={}
+		for word in query:gmatch("%S+") do
+			table.insert(array, word)
+		end
+		query = array
+	end
+
+	local len = #query
+	
+	if len == 2 then
+		local a, b = unpack(query)
+		local f = class.uni[a]
+		if f then
+			b = parse_query_value(class, context, b)
+			return f(context, b)
+		end
+	elseif len == 3 then
+		local a, b, c = unpack(query)
+		local f = class.bi[b]
+		if f then
+			a = parse_query_value(class, context, a)
+			c = parse_query_value(class, context, c)
+			return f(context, a, c)
+		end
+	end
+
+	local f = class.aggregates[query[1]]
+	if f then
+		local queries = {}
+		for i=2,len do
+			table.insert(queries, parse_query(class, context, query[i]))
+		end
+
+		return f(context, queries)
+	end
+
+	error("Invalid query.")
+end
+
+local function query_call(self, values)
 	if transaction then
-		error("Running where() clauses in transactions currently isn't supported")
+		error("Running query() clauses in transactions currently isn't supported")
 	end
 
 	local statement = self.statement()
 	local entity = self.entity
 	local field_names = entity.field_names
 	local key = entity.key
-	local rows = entity.rows
+	local cached_rows = entity.rows
 
-	confirm(statement:bind_values(...), "Failed to bind values")
+	local parameters = {}
+	if values then
+		for k,v in pairs(values) do
+			parameters[k] = v
+		end
+	end
+	for k,v in pairs(self.constants) do
+		parameters[k] = v
+	end
 
-	local results = execute_multi(statement)
+	confirm(statement:bind_names(parameters), "Failed to bind parameters")
 
-	for i,row in ipairs(results) do
+	local rows = execute_multi(statement)
+	local set = {}
+
+	for i,row in ipairs(rows) do
 		local data = {}
 
 		for j,value in ipairs(row) do
@@ -1363,21 +1602,35 @@ local function where_call(self, ...)
 			data[field] = value
 		end
 
-		local result = rows[data.rowid]
+		local result = cached_rows[data.rowid]
 		if result == nil then
 			result = new_row(entity, data)
 		end
 
-		results[i] = result
+		set[result] = true
+	end
+
+	local test = self.test
+	for row in pairs(entity.dirty) do
+		if not row:deleted() and test(row, values) then
+			set[row] = true
+		else
+			set[row] = nil
+		end
+	end
+
+	local results = {}
+	for row in pairs(set) do
+		table.insert(results, row)
 	end
 
 	return results
 end
 
-local where_mt = {__index = where, __call = where_call}
+local query_mt = {__index = query, __call = query_call}
 
-function entity:where(clause)
-	local where = setmetatable({}, where_mt)
+function entity:query(...)
+	local query = setmetatable({}, query_mt)
 
 	local field_names = self.field_names
 
@@ -1385,14 +1638,27 @@ function entity:where(clause)
 	for i,v in ipairs(field_names) do
 		quoted_field_names[i] = quote(v)
 	end
-	
-	local sql = "SELECT "..table.concat(quoted_field_names, ",")..",\"rowid\" FROM "..quote(self.name).." WHERE "..clause
 
-	where.sql = sql
-	where.statement = prepare{sql}
-	where.entity = self
+	local first = ...
 
-	return where
+	local params
+	if type(first) == "string" and query_functions.lua.aggregates[first] ~= nil then
+		params = {...}
+	else
+		params = {"all", ...}
+	end
+
+	query.entity = self
+	query.constants = {}
+	query.const_count = 0
+
+	query.sql = "SELECT "..table.concat(quoted_field_names, ",")..",\"rowid\" FROM "..quote(self.name).." WHERE "..parse_query(query_functions.sql, query, params)
+
+	query.statement = prepare{query.sql}
+
+	query.test = parse_query(query_functions.lua, query, params)
+
+	return query
 end
 
 
