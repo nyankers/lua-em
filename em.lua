@@ -374,7 +374,11 @@ end
 -- open the db
 function em.open(filename)
 	em.close()
-	em.db = sqlite3.open(filename)
+	if filename then
+		em.db = sqlite3.open(filename)
+	else
+		em.db = sqlite3.open_memory()
+	end
 end
 
 local function get_vfkey(parent, vfkey)
@@ -939,16 +943,31 @@ local function new_row(entity, data, reread)
 		local prev = values[key]
 		if prev ~= value then
 
+			local _value = value
+			if type(value) == "table" then
+				local ventity = value.entity
+				if fields[key].entity ~= ventity.name then
+					error("Field "..entity.name.."."..key.." cannot store entity "..entity.name)
+				end
+
+				local pkey = ventity.key
+				_value = value[pkey]
+			end
+
 			if fields[key].unique then
-				if check_collision(key, value) then
-					error("Field "..key.." value "..value.." already exists on "..entity.name)
+				if check_collision(key, _value) then
+					error("Field "..entity.name.."."..key.." value "..value.." already exists on "..entity.name)
 				end
 
 				entity.caches[key][prev] = nil
-				entity.caches[key][value] = row
+				entity.caches[key][_value] = row
 			end
 
-			values[key] = value
+			if value ~= _value and value.rowid then
+				values[key] = _value
+			else
+				values[key] = value
+			end
 			mark_dirty(entity, row)
 		end
 	end
