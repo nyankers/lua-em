@@ -259,6 +259,75 @@ local function entity_class(entity, ...)
 end
 em.fkey = entity_class
 
+local bad_types = {
+	["table"] = true,
+	["function"] = true,
+	["userdata"] = true,
+	["thread"] = true,
+}
+
+local function make_transform(f)
+	return function(field, value)
+		if value == nil then
+			if field.required then
+				error("Field "..field.name.." is required but was set to nil.")
+			end
+			return nil, nil
+		end
+
+		if bad_types[type(value)] then
+			error("Field "..field.name.." cannot be set to a "..type(value)..".")
+		end
+
+		local processed = f(value)
+		if processed == nil then
+			error("Field "..field.name.." cannot be set to value "..tostring(value)..".")
+		end
+
+		return processed, processed
+	end
+end
+
+local transforms = {
+	TEXT = make_transform(tostring),
+	NUMERIC = make_transform(tonumber),
+	INT = make_transform(function (value)
+		return math.floor(tonumber(value))
+	end),
+	ENTITY = function(field, value)
+		if value == nil then
+			if field.required then
+				error("Field "..field.name.." is required but was set to nil.")
+			end
+			return nil, nil
+		end
+
+		local _value = value
+		if type(value) == "table" then
+			local ventity = value.entity
+			if field.entity ~= ventity.name then
+				error("Field "..entity.name.."."..key.." cannot store entity "..entity.name)
+			end
+
+			local pkey = ventity.key
+			_value = value[pkey]
+		end
+
+		if value.rowid then
+			return _value, _value
+		else
+			return value, _value
+		end
+	end,
+}
+transforms.BLOB = transforms.TEXT
+transforms.REAL = transforms.NUMERIC
+transforms.ID = transforms.INT
+
+local function transform_value(field, value)
+	return transforms[field.class](field, value)
+end
+
 
 ----------------------
 -- module functions --
@@ -898,7 +967,7 @@ local function new_row(entity, data, reread)
 				error("Can't access "..entity.name.."."..field.name.." child table "..field.entity)
 			end
 
-			local pkey = value(self, entity.key)
+			local pkey = raw(self, entity.key)
 
 			return get(pkey)
 		end
@@ -918,13 +987,13 @@ local function new_row(entity, data, reread)
 		return rv
 	end
 
-	local function check_collision(key, value)
-		if entity.caches[key][value] then
+	local function check_collision(key, lookup)
+		if entity.caches[key][lookup] then
 			return true
 		end
 
 		local has = entity.statements.has[key]()
-		confirm(has:bind(1, value), "Failed to bind unique field")
+		confirm(has:bind(1, lookup), "Failed to bind unique field")
 		if execute(has, get_first) ~= 0 then
 			return true
 		end
@@ -942,32 +1011,22 @@ local function new_row(entity, data, reread)
 
 		local prev = values[key]
 		if prev ~= value then
+			local field = fields[key]
 
-			local _value = value
-			if type(value) == "table" then
-				local ventity = value.entity
-				if fields[key].entity ~= ventity.name then
-					error("Field "..entity.name.."."..key.." cannot store entity "..entity.name)
-				end
+			local store, lookup = transform_value(field, value)
 
-				local pkey = ventity.key
-				_value = value[pkey]
-			end
-
-			if fields[key].unique then
-				if check_collision(key, _value) then
+			if lookup ~= nil and fields[key].unique then
+				if check_collision(key, lookup) then
 					error("Field "..entity.name.."."..key.." value "..value.." already exists on "..entity.name)
 				end
 
+				local _, prev_lookup = transform_value(field, prev)
+
 				entity.caches[key][prev] = nil
-				entity.caches[key][_value] = row
+				entity.caches[key][lookup] = row
 			end
 
-			if value ~= _value and value.rowid then
-				values[key] = _value
-			else
-				values[key] = value
-			end
+			values[key] = store
 			mark_dirty(entity, row)
 		end
 	end
@@ -1137,7 +1196,8 @@ local function new_row(entity, data, reread)
 
 	-- cache the row
 	for i,name in ipairs(entity.unique_fields) do
-		entity.caches[name][data[name]] = row
+		local _, lookup = transform_value(entity.fields[name], data[name])
+		entity.caches[name][lookup] = row
 	end
 	if data.rowid then
 		entity.rows[data.rowid] = row
@@ -1163,9 +1223,9 @@ function entity:new(data, skip_check)
 	local is_unique = self.statements and self.statements.is_unique and self.statements.is_unique()
 	if is_unique then
 		for i,name in ipairs(self.unique_fields) do
-			local value = data[name]
+			local _, lookup = transform_value(self.fields[name], data[name])
 
-			if self.caches[name][value] then
+			if self.caches[name][lookup] then
 				error("UNIQUE constraint broken")
 			end
 
@@ -1180,11 +1240,6 @@ function entity:new(data, skip_check)
 	end
 
 	local row = new_row(self, data) 
-
-	for i,name in ipairs(self.unique_fields) do
-		local value = data[name]
-		self.caches[name][value] = row
-	end
 
 	mark_dirty(self, row)
 	
