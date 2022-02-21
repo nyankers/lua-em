@@ -1,17 +1,7 @@
 EXPORT_ASSERT_TO_GLOBALS = true
 
 local lu = require("luaunit")
-local db = nil
 local weak = setmetatable({}, { __mode = "v" })
-
-----------------------------
--- Test Table Definitions --
-----------------------------
-
---local e = {
---	children = em.new("children", "id", { id = em.c.id, parent = "parent", value = em.c.text }),
---	optional = em.new("optional", "id", { id = em.c.id, req = em.c.text, opt = em.c.text("?") }),
---}
 
 ----------------
 -- Unit Tests --
@@ -181,6 +171,32 @@ function test_data_types()
 		assertError(function() row[name] = em.db end)
 		assertError(function() row[name] = coroutine.create(function() end) end)
 	end
+end
+
+function test_on_change()
+	local em = dofile("em.lua")
+	em.open()
+
+	local count = 0
+	em.on_change = function()
+		count = count + 1
+	end
+
+	local entity = em.new("test", "id", { id = em.c.id, value = em.c.text })
+	entity:create()
+
+	assertEquals(count, 0)
+
+	entity:new{id=1, value="foo"}
+	assertEquals(count, 1)
+
+	entity:new{id=2, value="bar"}
+	assertEquals(count, 1)
+
+	em.flush()
+
+	entity:new{id=3, value="bar"}
+	assertEquals(count, 2)
 end
 
 function test_children()
