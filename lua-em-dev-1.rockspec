@@ -2,7 +2,6 @@ package = "lua-em"
 version = "dev-1"
 source = {
 	url = "git://github.com/nyankers/lua-em",
-	tag = "dev-1",
 }
 description = {
 	summary = "Sqlite Entity Manager",
