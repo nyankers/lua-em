@@ -35,7 +35,7 @@ function test_child()
 	local em = dofile("em.lua")
 	em.open()
 
-	parent = em.new("parent", "key", { key = em.c.text, name = em.c.text, child = "child*", children = "children*" })
+	parent = em.new("parent", "key", { key = em.c.text, name = em.c.text, child = "child*" })
 	parent:create()
 
 	child = em.new("child", "parent", { parent = "parent!", data = em.c.text })
@@ -200,6 +200,77 @@ function test_on_change()
 end
 
 function test_children()
+	local em = dofile("em.lua")
+	em.open()
+
+	parent = em.new("parent", "key", { key = em.c.text, name = em.c.text, children = "child*" })
+	parent:create()
+
+	child = em.new("child", "id", { id = em.c.id, parent = "parent", data = em.c.text })
+	child:create()
+
+	weak.a = parent:new{key="a", name="foo"}
+	weak.b = parent:new{key="b", name="bar"}
+	weak.kid1 = child:new{id=1, parent="a", data="abc"}
+	weak.kid2 = child:new{id=2, parent="a", data="def"}
+	weak.kid3 = child:new{id=3, parent="a", data="ghi"}
+	weak.kid4 = child:new{id=4, parent="a", data="jkl"}
+	weak.kid5 = child:new{id=5, parent="a", data="mno"}
+
+	em.flush()
+	collectgarbage()
+
+	-- should be cleared from memory now
+	assertIsNil(weak.a)
+	assertIsNil(weak.b)
+	assertIsNil(weak.kid1)
+	assertIsNil(weak.kid2)
+	assertIsNil(weak.kid3)
+	assertIsNil(weak.kid4)
+	assertIsNil(weak.kid5)
+
+	local a = parent:get("a")
+	assertNotNil(a)
+
+	local b = parent:get("b")
+	assertNotNil(b)
+
+	local kids = a.children
+	assertIsTable(kids)
+	assertEquals(#kids, 5)
+
+	weak.kid = kids[1]
+	kids = nil
+	collectgarbage()
+	assertIsNil(weak.kid)
+
+	local kid1 = child:get(1)
+	local kid2 = child:get(2)
+	local kid3 = child:get(3)
+	local kid4 = child:get(4)
+	local kid5 = child:get(5)
+	assertNotNil(kid1)
+	assertNotNil(kid2)
+	assertNotNil(kid3)
+	assertNotNil(kid4)
+	assertNotNil(kid5)
+
+	assertItemsEquals(a.children, {kid1, kid2, kid3, kid4, kid5})
+
+	local kid6 = child:new{id=6, parent="a", data="pqr"}
+	
+	assertItemsEquals(a.children, {kid1, kid2, kid3, kid4, kid5, kid6})
+	assertEquals(b.children, {})
+
+	kid1.parent = "b"
+
+	assertItemsEquals(a.children, {kid2, kid3, kid4, kid5, kid6})
+	assertItemsEquals(b.children, {kid1})
+
+	kid6.parent = "b"
+
+	assertItemsEquals(a.children, {kid2, kid3, kid4, kid5})
+	assertItemsEquals(b.children, {kid1, kid6})
 end
 
 -- last line
