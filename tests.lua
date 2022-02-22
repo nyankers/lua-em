@@ -273,5 +273,111 @@ function test_children()
 	assertItemsEquals(b.children, {kid1, kid6})
 end
 
+function test_field_definitions()
+	local expected = {
+		blob={class="BLOB", name="blob", required=true},
+		int={class="INT", name="int", required=false},
+		key={class="ID", name="key", unique=true},
+		parent={class="ENTITY", entity="parent", name="parent", required=true},
+		alt={class="ENTITY", entity="parent", name="parent", required=false},
+		text={class="TEXT", name="text", required=true, unique=true}
+	}
+
+	local em = dofile("em.lua")
+	em.open()
+
+	assertEquals(em.c, em.class)
+
+	local parent = em.new("parent", em.c.id("id"))
+
+	local style1 = em.new("style1", "key", {
+		key = em.c.id"",
+		text = em.c.text"!",
+		int = em.c.int"?",
+		blob = em.c.blob"",
+		parent = "parent",
+		alt = "parent?",
+	})
+
+	local style2 = em.new("style2", "key", {
+		em.c.id("key"),
+		em.c.text("text", "!"),
+		em.c.int("int", "?"),
+		em.c.blob("blob"),
+		em.fkey("parent", "parent"),
+		em.fkey("parent", "alt", "?"),
+	})
+
+	local style3 = em.new("style3", em.c.id("key"), {
+		text = em.c.text{unique=true},
+		int = em.c.int{required=false},
+		blob = em.c.blob,
+		parent = parent,
+		alt = em.fkey(parent, {required = false}),
+	})
+
+	local style4 = em.new("style4", em.c.id("key"), {
+		em.c.text("text", {unique = true}),
+		em.c.int("int", {required = false}),
+		em.c.blob("blob"),
+		em.fkey("parent"),
+		em.fkey("parent", "alt", {required = false}),
+	})
+
+	local style5 = em.new("style5", "key", expected)
+
+	assertEquals(style1.fields, expected)
+	assertEquals(style2.fields, expected)
+	assertEquals(style3.fields, expected)
+	assertEquals(style4.fields, expected)
+	assertEquals(style5.fields, expected)
+
+	local expected2 = {
+		key={class="ID", name="key", unique=true, required=true},
+	}
+
+	local style21 = em.new("style21", "key", {
+		key=em.c.id"!"
+	})
+
+	local style22 = em.new("style22", "key", {
+		em.c.id("key", "!"),
+	})
+
+	local style23 = em.new("style23", em.c.id("key", "!"))
+
+	assertEquals(style21.fields, expected2)
+	assertEquals(style22.fields, expected2)
+	assertEquals(style23.fields, expected2)
+end
+
+function test_rowid()
+	local em = dofile("em.lua")
+	em.open()
+
+	local id_entity = em.new("id_entity", em.c.id("id"))
+	id_entity:create()
+
+	local pkey_entity = em.new("pkey_entity", em.c.text("key"))
+	pkey_entity:create()
+
+	local nokey_entity = em.new("nokey_entity", nil, {em.c.text("data")})
+	nokey_entity:create()
+
+	local id = id_entity:new()
+	local pkey = pkey_entity:new{key="a"}
+	local nokey = nokey_entity:new{data="foobar"}
+
+	assertIsNil(id.rowkey)
+	assertIsNil(pkey.rowkey)
+	assertIsNil(nokey.rowkey)
+
+	em.flush()
+
+	assertEquals(id.id, id.rowid)
+	assertNotNil(pkey.rowid)
+	assertNotNil(nokey.rowid)
+end
+
 -- last line
 os.exit(lu.LuaUnit.run())

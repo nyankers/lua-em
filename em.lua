@@ -203,19 +203,21 @@ local function class(default_options)
 			end
 		end
 
-		result.name = name
+		if name then
+			result.name = name
+		end
 
 		if options then
 			if type(options) == "string" then
 				local optstr = options
 				if result.class == "ID" then
 					options = {
-						required = optstr:match("!"),
+						required = optstr:match("!") and true or nil,
 					}
 				else
 					options = {
 						required = not optstr:match("?"),
-						unique = optstr:match("!"),
+						unique = optstr:match("!") and true or nil,
 					}
 				end
 
@@ -255,7 +257,7 @@ local function entity_class(entity, ...)
 		entity = entity.name
 	end
 
-	return class{class="ENTITY", entity=entity }(...)
+	return class{class="ENTITY", entity=entity, name=entity, required=true }(...)
 end
 em.fkey = entity_class
 
@@ -881,9 +883,6 @@ local function new_row(entity, data, reread)
 
 			local rowid = updated.rowid
 			entity.rows[rowid] = row
-			if rowid ~= nil and entity.key == "rowid" then
-				entity.cache[rowid] = row
-			end
 
 			updated = {}
 			reread = nil
@@ -1111,7 +1110,14 @@ local function new_row(entity, data, reread)
 				until code == sqlite3.DONE
 
 				if rowid == nil then
-					merge{rowid = statement:last_insert_rowid()}
+					local new_rowid = statement:last_insert_rowid()
+					merge{rowid = new_rowid}
+
+					local pkey = entity.key
+					local field = entity.fields[pkey]
+					if field ~= nil and field.class == "ID" then
+						merge{[pkey] = new_rowid}
+					end
 				end
 
 				statement:reset()
@@ -1199,8 +1205,10 @@ local function new_row(entity, data, reread)
 
 	-- cache the row
 	for i,name in ipairs(entity.unique_fields) do
-		local _, lookup = transform_value(entity.fields[name], data[name])
-		entity.caches[name][lookup] = row
+		if data[name] ~= nil then
+			local _, lookup = transform_value(entity.fields[name], data[name])
+			entity.caches[name][lookup] = row
+		end
 	end
 	if data.rowid then
 		entity.rows[data.rowid] = row
@@ -1215,6 +1223,8 @@ end
 
 -- create a new row
 function entity:new(data, skip_check)
+	data = data or {}
+
 	if not skip_check then
 		for k,v in pairs(data) do
 			if not self.fields[k] then
