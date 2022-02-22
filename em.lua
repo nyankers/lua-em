@@ -22,7 +22,7 @@ local sqlite3 = require("lsqlite3")
 local em = {}
 
 -- version
-em.version = { 0, 2, 1 }
+em.version = { 0, 2, 2 }
 em.version_string = table.concat(em.version, ".")
 
 -- registers
@@ -367,10 +367,11 @@ local function prepare(lines)
 				error("Database is closed")
 			end
 
-			statement = em.db:prepare(sql)
+			local code
+			statement, code = em.db:prepare(sql)
 
 			if statement == nil then
-				error("Failed to prepare statement: "..sql)
+				error("Failed to prepare statement (code "..code.."): "..sql)
 			end
 		end
 
@@ -387,8 +388,10 @@ local function prepare_statements(entity)
 	name = quote(name)
 
 	local field_names = {}
+	local field_params = {}
 	for i,v in ipairs(entity.field_names) do
 		field_names[i] = quote(v)
+		field_params[i] = "?"
 	end
 
 	local unique_checks = {}
@@ -402,12 +405,12 @@ local function prepare_statements(entity)
 		insert = prepare{
 			"INSERT INTO "..name,
 			"("..table.concat(field_names, ",")..")",
-			"VALUES ("..string.rep("?", #field_names, ", ")..")",
+			"VALUES ("..table.concat(field_params, ", ")..")",
 		},
 		update = prepare{
 			"UPDATE "..name,
 			"SET ("..table.concat(field_names, ",")..")",
-			"= ("..string.rep("?", #field_names, ", ")..")",
+			"= ("..table.concat(field_params, ", ")..")",
 			"WHERE rowid = ?",
 		},
 		delete = prepare{
