@@ -881,7 +881,7 @@ local function new_row(entity, data, reread)
 				values[k] = v
 			end
 
-			local rowid = updated.rowid
+			local rowid = values.rowid
 			entity.rows[rowid] = row
 
 			updated = {}
@@ -1289,7 +1289,6 @@ local function entity_reader(self, statement, key)
 		end
 
 		for i,name in ipairs(field_names) do
-			local name = field_names[i] or "rowid"
 			values[name] = data[i]
 		end
 
@@ -1663,11 +1662,11 @@ local function query_call(self, values)
 	for i,row in ipairs(rows) do
 		local data = {}
 
-		for j,value in ipairs(row) do
-			local field = field_names[j] or "rowid"
-
-			data[field] = value
+		for j,name in ipairs(field_names) do
+			data[name] = row[j]
 		end
+
+		data.rowid = row[#field_names + 1]
 
 		local result = cached_rows[data.rowid]
 		if result == nil then

@@ -379,5 +379,39 @@ function test_rowid()
 	assertNotNil(nokey.rowid)
 end
 
+function test_query_child()
+	local em = dofile("em.lua")
+	em.open()
+
+	parent = em.new("parent", "key", { key = em.c.text, name = em.c.text, child = "child*" })
+	parent:create()
+
+	child = em.new("child", "parent", { parent = "parent!", data = em.c.text })
+	child:create()
+
+	weak.a = parent:new{key="a", name="foo"}
+	weak.b = parent:new{key="b", name="bar"}
+	weak.kid = child:new{parent="a", data="blah"}
+
+	em.flush()
+	collectgarbage()
+
+	-- should be cleared from memory now
+	assertIsNil(weak.a)
+	assertIsNil(weak.b)
+	assertIsNil(weak.kid)
+
+	local query = child:query("data = :data")
+	local results = query{data="blah"}
+	assertEquals(#results, 1)
+
+	local kid = results[1]
+	assertNotNil(kid)
+	assertEquals(kid.data, "blah")
+	assertEquals(kid.parent, parent:get("a"))
+	assertEquals(kid._parent, "a")
+	assertEquals(kid.parent.name, "foo")
+end
+
 -- last line
 os.exit(lu.LuaUnit.run())
