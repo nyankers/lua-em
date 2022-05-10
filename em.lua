@@ -16,19 +16,30 @@
 -- Module Setup --
 ------------------
 
+-- required dependencies
 local sqlite3 = require("lsqlite3")
+
+-- optional dependencies
+local jsonlib = nil
+
+pcall(function()
+	jsonlib = require("json")
+end)
 
 -- module
 local em = {}
 
 -- version
-em.version = { 0, 2, 2 }
+em.version = { 0, 3, 0 }
 em.version_string = table.concat(em.version, ".")
 
 -- registers
 em.default_key = nil
 em.on_change = nil
 em.retry = false
+
+-- flags
+em.json = not not jsonlib
 
 -- module variables
 local entities = {}
@@ -242,8 +253,13 @@ local classes = {
 	int     = class{class="INT", required=true},
 	real    = class{class="REAL", required=true},
 	blob    = class{class="BLOB", required=true},
-	id      = class{class="ID", unique=true},
+	id      = class{class="ID", sqltype="INTEGER", unique=true},
 }
+
+-- Optional json class
+if jsonlib then
+	classes.json = class{class="JSON", sqltype="TEXT", required=true}
+end
 
 -- verbose
 em.class = classes
@@ -326,8 +342,98 @@ transforms.BLOB = transforms.TEXT
 transforms.REAL = transforms.NUMERIC
 transforms.ID = transforms.INT
 
-local function transform_value(field, value)
-	return transforms[field.class](field, value)
+if jsonlib then
+	transforms.JSON = function(field, value, entity, row)
+		local json = nil
+		local obj  = nil
+
+		local json_mt = {}
+
+		local new_table = function(source)
+			local storage = {}
+			local result = setmetatable({__storage = storage}, json_mt)
+
+			for k,v in pairs(source) do
+				if type(v) == "table" then
+					v = new_table(v)
+				end
+
+				storage[k] = v
+			end
+
+			return result
+		end
+
+		json_mt.__index = function(self, key)
+			return self.__storage[key]
+		end
+
+		json_mt.__newindex = function(self, key, value)
+			if type(value) == "table" and getmetatable(value) ~= json_mt then
+				value = new_table(value)
+			end
+
+			if type(value) == "function" or type(value) == "thread" or type(value) == "userdata" then
+				error("cannot store "..type(value).." in json objects")
+			end
+
+			json = nil
+
+			if entity and row then
+				mark_dirty(entity, row)
+			end
+
+			self.__storage[key] = value
+		end
+
+		if value == nil then
+			if field.required then
+				error("Field "..field.name.." is required but was set to nil.")
+			end
+			return nil, nil
+		end
+
+		local unwind
+
+		unwind = function(table)
+			local result = {}
+
+			for k,v in pairs(table.__storage) do
+				if type(v) == "table" then
+					v = unwind(v)
+				end
+				result[k] = v
+			end
+
+			return result
+		end
+
+		if type(value) == "string" then
+			json = value
+		elseif type(value) == "table" then
+			obj = new_table(value)
+		end
+
+		local f = function(parsed)
+			if parsed then
+				if obj == nil then
+					obj = new_table(jsonlib.decode(json))
+				end
+				return obj
+			else
+				if json == nil then
+					json = jsonlib.encode(unwind(obj))
+				end
+				return json
+			end
+		end
+
+		return f, f(false)
+	end
+end
+
+local function transform_value(field, value, entity, row)
+	return transforms[field.class](field, value, entity, row)
 end
 
 
@@ -852,15 +958,26 @@ local function new_row(entity, data, reread)
 	-- cache fields
 	local fields = entity.fields
 
+	-- for later
+	local initial_lookup = {}
+
+	-- row object
+	local mt = {}
+	local row = setmetatable({}, mt)
+
 	for k,v in pairs(fields) do
 		if v.required and data[k] == nil then
 			error("Required field "..k.." is missing ("..entity.name..")")
 		end
 
+		local value, lookup = transform_value(v, data[k], entity, row)
+
+		initial_lookup[k] = lookup
+
 		if reread then
-			updated[k] = data[k]
+			updated[k] = value
 		else
-			values[k] = data[k]
+			values[k] = value
 		end
 	end
 
@@ -869,10 +986,6 @@ local function new_row(entity, data, reread)
 	else
 		values.rowid = data.rowid
 	end
-
-	local mt = {}
-
-	local row = setmetatable({}, mt)
 
 	-- commit/rollback hook
 	local function hook(is_commit)
@@ -945,6 +1058,8 @@ local function new_row(entity, data, reread)
 
 		if type(rv) == "table" then
 			rv = rv:raw(rv.entity.key)
+		elseif type(rv) == "function" then
+			rv = rv(false)
 		end
 
 		return rv
@@ -984,6 +1099,8 @@ local function new_row(entity, data, reread)
 			local other = entities[field.entity]
 
 			rv = other:get(rv)
+		elseif type(rv) == "function" then
+			rv = rv(true)
 		end
 
 		return rv
@@ -1015,14 +1132,14 @@ local function new_row(entity, data, reread)
 		if prev ~= value then
 			local field = fields[key]
 
-			local store, lookup = transform_value(field, value)
+			local store, lookup = transform_value(field, value, entity, row)
 
 			if lookup ~= nil and fields[key].unique then
 				if check_collision(key, lookup) then
 					error("Field "..entity.name.."."..key.." value "..value.." already exists on "..entity.name)
 				end
 
-				local _, prev_lookup = transform_value(field, prev)
+				local _, prev_lookup = transform_value(field, prev, entity, row)
 
 				entity.caches[key][prev] = nil
 				entity.caches[key][lookup] = row
@@ -1095,6 +1212,8 @@ local function new_row(entity, data, reread)
 						end
 
 						merge{[name]=value}
+					elseif type(value) == "function" then
+						value = value(false)
 					end
 
 					confirm(call(statement, i, value), "Failed to bind "..name.." to parameter #"..i)
@@ -1206,7 +1325,8 @@ local function new_row(entity, data, reread)
 	-- cache the row
 	for i,name in ipairs(entity.unique_fields) do
 		if data[name] ~= nil then
-			local _, lookup = transform_value(entity.fields[name], data[name])
+			local lookup = initial_lookup[name]
+
 			entity.caches[name][lookup] = row
 		end
 	end
@@ -1227,7 +1347,9 @@ function entity:new(data, skip_check)
 
 	if not skip_check then
 		for k,v in pairs(data) do
-			if not self.fields[k] then
+			local field = self.fields[k]
+
+			if not field then
 				error("Invalid field: "..k)
 			end
 		end
@@ -1354,6 +1476,7 @@ function entity:create_sql()
 	for _, name in ipairs(self.field_names) do
 		local field = self.fields[name]
 		local class = field.class
+		local sqltype = field.sqltype or class
 
 		name = quote(name)
 
@@ -1366,13 +1489,11 @@ function entity:create_sql()
 				error("Table "..self.name.."."..name.." references keyless table "..field.entity)
 			end
 			local pkey = entity.fields[entity.key]
-			class = pkey.class
+			sqltype = pkey.class
 			table.insert(fkeys, {name, quote(field.entity), quote(entity.key)})
-		elseif class == "ID" then
-			class = "INTEGER"
 		end
 
-		local parts = { name, class }
+		local parts = { name, sqltype }
 
 		if field.required then
 			table.insert(parts, "NOT NULL")
@@ -1568,6 +1689,30 @@ local query_functions = {
 	}
 }
 
+if jsonlib then
+	query_functions.lua.json = function(context, a, b)
+		local path = {}
+		for str in b:gmatch("[^.]+") do
+			table.insert(path, str)
+		end
+		return function(row, params)
+			local obj = row:get(a)
+			for _,str in ipairs(path) do
+				if type(obj) ~= "table" then
+					return nil
+				end
+
+				obj = obj[str]
+			end
+
+			return obj
+		end
+	end
+	query_functions.sql.json = function(context, a, b)
+		return "json_extract("..a..", '$."..b.."')"
+	end
+end
+
 local function parse_query_value(class, context, value)
 	if type(value) == "table" then
 		return class.const(context, value[1])
@@ -1581,6 +1726,13 @@ local function parse_query_value(class, context, value)
 
 		if context.entity.fields[value] then
 			return class.field(context, value)
+		end
+
+		if jsonlib then
+			local field, path = value:match("^([^.]+)[.](.+)$")
+			if field and context.entity.fields[field] and context.entity.fields[field].class == "JSON" then
+				return class.json(context, field, path)
+			end
 		end
 
 		local text = value:match("^'(.+)'$")

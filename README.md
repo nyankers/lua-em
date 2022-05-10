@@ -162,12 +162,17 @@ Fields have type information and may even point to a different table:
 | `em.c.int`     | INT (not INTEGER) |
 | `em.c.real`    | REAL              |
 | `em.c.blob`    | BLOB              |
+| `em.c.json`    | TEXT              |
 | `em.c.id`      | INTEGER (internally marked as ID) |
 
 The above types are functions which may accept up to two parameters, a name and
 an option table/string. If a single string parameter is given, it's assumed to
 be a name if it has a single letter, and otherwise is treated as an option
 string.
+
+The `em.c.json` type is only usable if `require("json")` returns a module,
+which lua-em will assume provides `encode()` and `decode()` functions for
+converting Lua objects to and from JSON strings.
 
 | Field option | Description                           |
 | `required`   | Defaults to true, disabled with `"?"` |
@@ -364,6 +369,12 @@ Parameters may be accessed by beginning a string with a colon (`:`), e.g.
 `":name"`. They automatically become lowercase, so even if you use `":NAME"`,
 calling the query will require using the lowercase version. However, no
 parameter can begin with a `_`, as these are reserved for lua-em's use.
+
+If json is enabled, a string delimited with periods is treated as a json
+lookup, using the sqlite function `json_extract()`. The first part of the
+string is used as the field name (and must be of type `em.c.json`). For
+example, the query string `"data.a.b"` compiles into `json_extract(data,
+'$.a.b')`.
 
 Any other value is treated as a constant, though you can make this explicit by
 making it a one-element array, e.g. if you need a query that looks up everyone

@@ -160,6 +160,24 @@ function test_data_types()
 	assertEquals(row.real, 9.7)
 	assertEquals(row.blob, "42")
 
+	row = entity:new{
+		id = "4",
+		text = 42,
+		numeric = "90.50",
+		int = "22.1",
+		real = "12.4",
+		blob = 9
+	}
+	em.flush()
+
+	assertEquals(entity:get(4), row)
+	assertEquals(row.id, 4)
+	assertEquals(row.text, "42")
+	assertEquals(row.numeric, 90.5)
+	assertEquals(row.int, 22)
+	assertEquals(row.real, 12.4)
+	assertEquals(row.blob, "9")
+
 	assertError(function() row.id = "blah" end)
 	assertError(function() row.numeric = "blah" end)
 	assertError(function() row.int = "blah" end)
@@ -277,7 +295,7 @@ function test_field_definitions()
 	local expected = {
 		blob={class="BLOB", name="blob", required=true},
 		int={class="INT", name="int", required=false},
-		key={class="ID", name="key", unique=true},
+		key={class="ID", sqltype="INTEGER", name="key", unique=true},
 		parent={class="ENTITY", entity="parent", name="parent", required=true},
 		alt={class="ENTITY", entity="parent", name="parent", required=false},
 		text={class="TEXT", name="text", required=true, unique=true}
@@ -333,7 +351,7 @@ function test_field_definitions()
 	assertEquals(style5.fields, expected)
 
 	local expected2 = {
-		key={class="ID", name="key", unique=true, required=true},
+		key={class="ID", sqltype="INTEGER", name="key", unique=true, required=true},
 	}
 
 	local style21 = em.new("style21", "key", {
@@ -411,6 +429,72 @@ function test_query_child()
 	assertEquals(kid.parent, parent:get("a"))
 	assertEquals(kid._parent, "a")
 	assertEquals(kid.parent.name, "foo")
+end
+
+function test_json()
+	local em = dofile("em.lua")
+	em.open()
+
+	assertEquals(em.json, true)
+
+	local entity = em.new("entity", "id", {
+		id = em.c.id,
+		json = em.c.json,
+	})
+	entity:create()
+
+	weak.a = entity:new{
+		id = 1,
+		json = {
+			a = "ok",
+			b = 42,
+		}
+	}
+
+	weak.a.json.c = "third"
+
+	em.flush()
+	collectgarbage()
+
+	local a = entity:get(1)
+	assertIsTable(a.json)
+	assertIsString(a._json)
+
+	assertEquals(a.json.a, "ok")
+	assertEquals(a.json.b, 42)
+	assertEquals(a.json.c, "third")
+
+	a.json.a = "updated"
+	a.json.b = a.json.b + 1
+	a.json.d = "fourth"
+
+	assertEquals(a.json.a, "updated")
+	assertEquals(a.json.b, 43)
+	assertEquals(a.json.d, "fourth")
+
+	em.flush()
+	a = nil
+	collectgarbage()
+
+	a = entity:get(1)
+
+	assertEquals(a.json.a, "updated")
+	assertEquals(a.json.b, 43)
+	assertEquals(a.json.c, "third")
+	assertEquals(a.json.d, "fourth")
+
+	-- test JSON query
+
+	assertIsNil(entity.dirty[a])
+
+	local query = entity:query("json.a = :a")
+
+	local results = query{a = "updated"}
+	assertEquals(#results, 1)
+	assertEquals(results[1], a)
+
+	results = query{a = "ok"}
+	assertEquals(#results, 0)
 end
 
 -- last line
