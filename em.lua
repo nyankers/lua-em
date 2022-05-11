@@ -331,7 +331,7 @@ local transforms = {
 			_value = value[pkey]
 		end
 
-		if value.rowid then
+		if type(value) == "table" and value.rowid then
 			return _value, _value
 		else
 			return value, _value
